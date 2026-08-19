@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="Capture photos with GPS location, address and timestamp. Works offline.">
+  <title>Liz GPSCam – GPS Camera</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23000'/><path fill='%233b82f6' d='M50 18c-12 0-22 10-22 22 0 16 22 42 22 42s22-26 22-42c0-12-10-22-22-22zm0 30a8 8 0 1 1 0-16 8 8 0 0 1 0 16z'/><rect x='28' y='58' width='44' height='28' rx='6' fill='%23fff'/><circle cx='50' cy='72' r='9' fill='%23000'/><circle cx='50' cy='72' r='5' fill='%233b82f6'/></svg>">
+  <style>
+    :root {
+      --primary: #3b82f6;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      height: 100%; background: #000; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden; position: relative; user-select: none; -webkit-user-select: none;
+    }
+    #camera { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #0a0a0a; }
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none; z-index: 5;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+    }
+    #grid { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+    #grid.show { display: block; }
+    #grid::before, #grid::after { content: ""; position: absolute; background: rgba(255,255,255,0.28); }
+    #grid::before { left: 33.333%; top: 0; bottom: 0; width: 1px; box-shadow: 33.333vw 0 0 rgba(255,255,255,0.28); }
+    #grid::after { top: 33.333%; left: 0; right: 0; height: 1px; box-shadow: 0 33.333vh 0 rgba(255,255,255,0.28); }
+
+    /* Compact live overlay — stays out of the way while framing a shot */
+    #overlay {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: calc(12px + var(--safe-top)) 16px 30px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 55%, transparent 100%);
+      z-index: 20;
+    }
+    .top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
+    .app-badge {
+      display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700;
+      letter-spacing: 0.3px; background: rgba(255,255,255,0.14);
+      padding: 6px 11px 6px 9px; border-radius: 20px;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); white-space: nowrap;
+    }
+    .app-badge .logo {
+      width: 20px; height: 20px; flex-shrink: 0;
+      border-radius: 6px; overflow: hidden;
+    }
+    .app-badge .logo svg { width: 100%; height: 100%; display: block; }
+    .pills { display: flex; gap: 6px; align-items: center; }
+    .pill {
+      font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 18px;
+      background: rgba(255,255,255,0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); white-space: nowrap;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.9; flex-shrink: 0; }
+    .pill.offline { color: #fca5a5; background: rgba(239,68,68,0.22); }
+    .pill.online  { color: #86efac; background: rgba(34,197,94,0.18); }
+    .pill.acc-good { color: #86efac; background: rgba(34,197,94,0.2); }
+    .pill.acc-ok   { color: #fde68a; background: rgba(245,158,11,0.2); }
+    .pill.acc-poor { color: #fca5a5; background: rgba(239,68,68,0.2); }
+    .pill.hidden { display: none; }
+
+    #location {
+      font-size: 16px; font-weight: 600; line-height: 1.32; margin-bottom: 4px;
+      text-shadow: 0 1px 5px rgba(0,0,0,0.55); display: -webkit-box; -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical; overflow: hidden;
+    }
+    #coords {
+      font-size: 13px; opacity: 0.82; font-variant-numeric: tabular-nums; letter-spacing: 0.15px;
+      margin-bottom: 5px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    #coords .copy-btn {
+      font-size: 11.5px; font-weight: 600; color: #93c5fd; background: rgba(59,130,246,0.22);
+      border: none; border-radius: 8px; padding: 4px 9px; cursor: pointer;
+    }
+    #meta { font-size: 13px; opacity: 0.88; font-variant-numeric: tabular-nums; display: flex; gap: 14px; flex-wrap: wrap; }
+    #status { font-size: 12.5px; color: #fca5a5; margin-top: 6px; min-height: 16px; }
+    #enableLocBtn {
+      display: none; margin-top: 10px; width: 100%; padding: 12px; background: var(--primary);
+      color: white; border: none; border-radius: 14px; font-size: 14.5px; font-weight: 600;
+      box-shadow: 0 4px 16px rgba(59,130,246,0.4);
+    }
+    #enableLocBtn:active { transform: scale(0.98); }
+    .map-link { display: none; margin-top: 8px; font-size: 13px; color: #93c5fd; text-decoration: none; font-weight: 500; }
+    .spinner {
+      display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%; animation: spin 0.65s linear infinite;
+      vertical-align: -2px; margin-right: 5px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #controls {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 16px 20px calc(28px + var(--safe-bottom));
+      background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+      z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 18px;
+    }
+    .ctrl-row { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 380px; }
+    .side-btn {
+      width: 50px; height: 50px; border-radius: 50%; border: none; background: rgba(255,255,255,0.14);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: rgba(255,255,255,0.95);
+      display: flex; align-items: center; justify-content: center; transition: transform 0.12s, background 0.15s; position: relative;
+    }
+    .side-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.25); }
+    .side-btn svg { width: 22px; height: 22px; }
+    .side-btn.active { background: rgba(59,130,246,0.45); color: #fff; }
+    .side-btn.torch-on { background: rgba(251,191,36,0.42); color: #fde68a; }
+
+    #captureBtn {
+      width: 78px; height: 78px; border-radius: 50%; border: 4px solid rgba(255,255,255,0.95);
+      background: transparent; position: relative; padding: 0; transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s;
+      flex-shrink: 0;
+    }
+    #captureBtn::after {
+      content: ""; position: absolute; inset: 5px; background: #fff; border-radius: 50%;
+      transition: transform 0.1s, background 0.1s;
+    }
+    #captureBtn:active { transform: scale(0.93); }
+    #captureBtn:active::after { transform: scale(0.88); background: #ddd; }
+    #captureBtn.not-ready { border-color: rgba(255,255,255,0.35); }
+    #captureBtn.not-ready::after { background: rgba(255,255,255,0.4); }
+    #captureBtn.locked { box-shadow: 0 0 0 4px rgba(34,197,94,0.28); }
+
+    #lastThumb {
+      width: 50px; height: 50px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.55);
+      object-fit: cover; background: #222; display: none; cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    #lastThumb.show { display: block; }
+
+    #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 40; transition: opacity 0.07s; }
+    #toast {
+      position: absolute; bottom: calc(146px + var(--safe-bottom)); left: 50%;
+      transform: translateX(-50%) translateY(20px); background: rgba(28,28,30,0.94);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: #fff; font-size: 14px; font-weight: 600;
+      padding: 12px 20px; border-radius: 13px; z-index: 60; opacity: 0; pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s; white-space: nowrap; max-width: 90%; text-align: center;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    #preview {
+      display: none; position: absolute; inset: 0; background: #050505; z-index: 50;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 16px 14px calc(16px + var(--safe-bottom)); animation: fadeIn 0.22s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    #previewImg { max-width: 100%; max-height: 62vh; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.55); object-fit: contain; }
+    #hint { color: #777; font-size: 13px; margin-top: 16px; text-align: center; line-height: 1.4; }
+    #btnRow { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 100%; }
+    .actionBtn {
+      padding: 13px 20px; font-size: 15px; border: none; border-radius: 14px; font-weight: 700;
+      min-width: 100px; transition: transform 0.1s, opacity 0.1s;
+    }
+    .actionBtn:active { transform: scale(0.96); opacity: 0.9; }
+    #retakeBtn { background: #2a2a2a; color: #fff; }
+    #shareBtn  { background: var(--primary); color: #fff; box-shadow: 0 4px 14px rgba(59,130,246,0.35); }
+    #saveBtn   { background: var(--success); color: #fff; box-shadow: 0 4px 14px rgba(34,197,94,0.3); }
+  </style>
+</head>
+<body>
+  <video id="camera" autoplay playsinline muted></video>
+  <div class="vignette"></div>
+  <div id="grid"></div>
+  <div id="flash"></div>
+  <div id="toast"></div>
+
+  <div id="overlay">
+    <div class="top-row">
+      <div class="app-badge">
+        <div class="logo">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="40" height="40" rx="9" fill="#3b82f6"/>
+            <path d="M20 8c-5.5 0-10 4.5-10 10 0 7.5 10 19 10 19s10-11.5 10-19c0-5.5-4.5-10-10-10zm0 13.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" fill="#fff"/>
+            <rect x="11" y="26" width="18" height="11" rx="2.5" fill="#fff" fill-opacity="0.95"/>
+            <circle cx="20" cy="31.5" r="3.8" fill="#1e3a8a"/>
+            <circle cx="20" cy="31.5" r="2.1" fill="#3b82f6"/>
+          </svg>
+        </div>
+        Liz GPSCam
+      </div>
+      <div class="pills">
+        <div id="netPill" class="pill offline">Offline</div>
+        <div id="accPill" class="pill hidden"></div>
+      </div>
+    </div>
+
+    <div id="location"><span class="spinner"></span>Getting location…</div>
+    <div id="coords"></div>
+    <div id="meta">
+      <span id="time">--:--:--</span>
+      <span id="heading"></span>
+    </div>
+    <div id="status"></div>
+    <button id="enableLocBtn">Enable Location</button>
+    <a id="mapLink" class="map-link" href="#" target="_blank" rel="noopener">Open in Maps ↗</a>
+  </div>
+
+  <div id="controls">
+    <div class="ctrl-row">
+      <button id="gridBtn" class="side-btn" aria-label="Grid" title="Rule of thirds">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+      </button>
+      <button id="switchBtn" class="side-btn" aria-label="Switch camera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M3 4l7 7"/></svg>
+      </button>
+      <button id="captureBtn" class="not-ready" aria-label="Take photo"></button>
+      <button id="torchBtn" class="side-btn" aria-label="Torch" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2v2"/>
+          <path d="M4.93 4.93l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/>
+          <path d="M19.07 4.93l-1.41 1.41"/><circle cx="12" cy="12" r="5"/>
+        </svg>
+      </button>
+      <img id="lastThumb" alt="Last photo" title="View last photo">
+      <div id="thumbSpacer" style="width:50px;height:50px;"></div>
+    </div>
+  </div>
+
+  <div id="preview">
+    <img id="previewImg" alt="Captured photo">
+    <div id="hint">Long-press the photo to save<br>or use the buttons below</div>
+    <div id="btnRow">
+      <button class="actionBtn" id="retakeBtn">Retake</button>
+      <button class="actionBtn" id="shareBtn">Share</button>
+      <button class="actionBtn" id="saveBtn">Save</button>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('camera');
+    const locationEl = document.getElementById('location');
+    const coordsEl = document.getElementById('coords');
+    const timeEl = document.getElementById('time');
+    const headingEl = document.getElementById('heading');
+    const statusEl = document.getElementById('status');
+    const enableLocBtn = document.getElementById('enableLocBtn');
+    const netPill = document.getElementById('netPill');
+    const accPill = document.getElementById('accPill');
+    const mapLink = document.getElementById('mapLink');
+    const captureBtn = document.getElementById('captureBtn');
+    const switchBtn = document.getElementById('switchBtn');
+    const torchBtn = document.getElementById('torchBtn');
+    const gridBtn = document.getElementById('gridBtn');
+    const gridEl = document.getElementById('grid');
+    const lastThumb = document.getElementById('lastThumb');
+    const thumbSpacer = document.getElementById('thumbSpacer');
+    const flashEl = document.getElementById('flash');
+    const toastEl = document.getElementById('toast');
+    const preview = document.getElementById('preview');
+    const previewImg = document.getElementById('previewImg');
+    const saveBtn = document.getElementById('saveBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const retakeBtn = document.getElementById('retakeBtn');
+
+    let currentStream = null;
+    let usingFrontCamera = false;
+    let torchOn = false;
+    let trackWithTorch = null;
+    let gridOn = false;
+    let currentLat = null;
+    let currentLng = null;
+    let currentAccuracy = null;
+    let currentHeading = null;
+    let addressText = 'Location not available';
+    let watchId = null;
+    let lastPhotoDataUrl = null;
+    let isOnline = navigator.onLine;
+    let cameraReady = false;
+
+    // Throttle reverse-geocoding lookups so we don't hammer the API on every GPS tick
+    let lastAddressFetchTime = 0;
+    let lastAddressFetchCoords = null;
+    let addressFetchInFlight = false;
+    const ADDRESS_FETCH_MIN_INTERVAL_MS = 15000;
+    const ADDRESS_FETCH_MIN_DISTANCE_M = 30;
+
+    const STORAGE_KEY = 'gpscam_lastloc';
+    const PHOTO_KEY = 'gpscam_lastphoto';
+
+    function toast(msg, ms = 2200) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
+    }
+    function vibrate(ms = 30) { if (navigator.vibrate) navigator.vibrate(ms); }
+    function setOnlineUI(online) {
+      isOnline = online;
+      netPill.textContent = online ? 'Online' : 'Offline';
+      netPill.className = 'pill ' + (online ? 'online' : 'offline');
+    }
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (d) => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    function loadCachedLocation() {
+      try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+    }
+    function saveLocationCache() {
+      if (currentLat == null) return;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          lat: currentLat, lng: currentLng, accuracy: currentAccuracy,
+          address: addressText, heading: currentHeading, ts: Date.now()
+        }));
+      } catch {}
+    }
+    function applyCachedLocation() {
+      const cached = loadCachedLocation();
+      if (!cached) return false;
+      currentLat = cached.lat; currentLng = cached.lng; currentAccuracy = cached.accuracy;
+      addressText = cached.address || 'Last known location'; currentHeading = cached.heading;
+      locationEl.textContent = addressText + (isOnline ? '' : ' (cached)');
+      coordsEl.innerHTML = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)} <button class="copy-btn" id="copyCoords">Copy</button>`;
+      bindCopy(); setAccuracyUI(currentAccuracy); updateHeadingUI();
+      mapLink.href = `https://www.google.com/maps?q=${currentLat},${currentLng}`;
+      mapLink.style.display = 'inline-block'; enableLocBtn.style.display = 'none';
+      return true;
+    }
+    function bindCopy() {
+      const btn = document.getElementById('copyCoords');
+      if (btn) btn.onclick = () => {
+        const text = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
+        if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Coordinates copied'));
+        else toast(text);
+        vibrate(20);
+      };
+    }
+
+    setOnlineUI(navigator.onLine);
+    window.addEventListener('online', () => { setOnlineUI(true); toast('Back online'); updateLocation(); });
+    window.addEventListener('offline', () => { setOnlineUI(false); toast('You are offline'); });
+
+    async function startCamera() {
+      cameraReady = false;
+      captureBtn.classList.add('not-ready');
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null; trackWithTorch = null;
+        torchBtn.style.display = 'none'; torchOn = false;
+      }
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: usingFrontCamera ? 'user' : 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+        video.srcObject = currentStream;
+        if (usingFrontCamera) {
+          video.style.transform = 'scaleX(-1)';
+          video.style.webkitTransform = 'scaleX(-1)';
+        } else {
+          video.style.transform = 'none';
+          video.style.webkitTransform = 'none';
+        }
+        const track = currentStream.getVideoTracks()[0];
+        const caps = track.getCapabilities?.() || {};
+        if (caps.torch && !usingFrontCamera) {
+          trackWithTorch = track; torchBtn.style.display = 'flex';
+        } else {
+          torchBtn.style.display = 'none';
+        }
+        updateThumbLayout();
+      } catch (err) {
+        statusEl.textContent = 'Camera: ' + (err.message || 'permission denied');
+        toast('Camera access needed');
+      }
+    }
+    video.addEventListener('loadedmetadata', () => {
+      cameraReady = true;
+      captureBtn.classList.remove('not-ready');
+    });
+
+    function updateThumbLayout() {
+      const hasThumb = lastThumb.classList.contains('show');
+      const hasTorch = torchBtn.style.display !== 'none';
+      thumbSpacer.style.display = (hasThumb || hasTorch) ? 'none' : 'block';
+    }
+
+    switchBtn.addEventListener('click', () => { usingFrontCamera = !usingFrontCamera; vibrate(15); startCamera(); });
+    torchBtn.addEventListener('click', async () => {
+      if (!trackWithTorch) return;
+      torchOn = !torchOn;
+      try {
+        await trackWithTorch.applyConstraints({ advanced: [{ torch: torchOn }] });
+        torchBtn.classList.toggle('torch-on', torchOn); vibrate(20);
+      } catch { toast('Torch not available'); }
+    });
+    gridBtn.addEventListener('click', () => {
+      gridOn = !gridOn; gridEl.classList.toggle('show', gridOn);
+      gridBtn.classList.toggle('active', gridOn); vibrate(15);
+    });
+
+    async function getAddress(lat, lng) {
+      if (!navigator.onLine) return null;
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'GeoCam-WebApp/1.0' } });
+        if (!res.ok) throw new Error('lookup failed');
+        const data = await res.json();
+        if (data?.address) {
+          const a = data.address; const parts = [];
+          const local = a.suburb || a.neighbourhood || a.village || a.hamlet || a.barangay || a.road;
+          if (local) parts.push(local);
+          if (a.city || a.town || a.municipality) parts.push(a.city || a.town || a.municipality);
+          if (a.state || a.province || a.region) parts.push(a.state || a.province || a.region);
+          if (a.country) parts.push(a.country);
+          return parts.filter(Boolean).join(', ') || data.display_name;
+        }
+        return data.display_name || null;
+      } catch { return null; }
+    }
+
+    function maybeFetchAddress(lat, lng) {
+      const now = Date.now();
+      const movedFar = lastAddressFetchCoords &&
+        haversineMeters(lat, lng, lastAddressFetchCoords.lat, lastAddressFetchCoords.lng) > ADDRESS_FETCH_MIN_DISTANCE_M;
+      const isFirstFetch = !lastAddressFetchCoords;
+      const timeOk = now - lastAddressFetchTime > ADDRESS_FETCH_MIN_INTERVAL_MS;
+
+      if (addressFetchInFlight) return;
+      if (!isFirstFetch && !movedFar && !timeOk) return;
+
+      addressFetchInFlight = true;
+      lastAddressFetchTime = now;
+      lastAddressFetchCoords = { lat, lng };
+
+      if (!addressText || addressText.includes('not available') || addressText.includes('Getting')) {
+        locationEl.innerHTML = '<span class="spinner"></span>Getting address…';
+      }
+      getAddress(lat, lng).then(addr => {
+        addressFetchInFlight = false;
+        if (addr) { addressText = addr; locationEl.textContent = addr; }
+        else if (!addressText || addressText.startsWith('Getting') || addressText.includes('not available')) {
+          addressText = isOnline ? 'Address unavailable' : 'Offline — coordinates only';
+          locationEl.textContent = addressText;
+        }
+        saveLocationCache();
+      }).catch(() => { addressFetchInFlight = false; });
+    }
+
+    function setAccuracyUI(meters) {
+      if (meters == null) { accPill.classList.add('hidden'); return; }
+      accPill.classList.remove('hidden');
+      const m = Math.round(meters);
+      accPill.textContent = `±${m} m`;
+      accPill.className = 'pill ' + (m <= 20 ? 'acc-good' : m <= 50 ? 'acc-ok' : 'acc-poor');
+      captureBtn.classList.toggle('locked', m <= 20);
+    }
+    function updateHeadingUI() {
+      if (currentHeading != null && !isNaN(currentHeading)) {
+        const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+        const ix = Math.round(currentHeading / 45) % 8;
+        headingEl.textContent = `${dirs[ix]} ${Math.round(currentHeading)}°`;
+      } else headingEl.textContent = '';
+    }
+    function showLocationError(msg) {
+      if (applyCachedLocation()) { statusEl.textContent = msg + ' — showing last known'; return; }
+      locationEl.textContent = msg; coordsEl.textContent = ''; statusEl.textContent = '';
+      enableLocBtn.style.display = 'block'; mapLink.style.display = 'none';
+      setAccuracyUI(null); headingEl.textContent = ''; addressText = msg;
+      currentLat = currentLng = currentAccuracy = null;
+    }
+    function applyPosition(pos) {
+      currentLat = pos.coords.latitude; currentLng = pos.coords.longitude; currentAccuracy = pos.coords.accuracy;
+      if (pos.coords.heading != null && !isNaN(pos.coords.heading)) currentHeading = pos.coords.heading;
+      coordsEl.innerHTML = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)} <button class="copy-btn" id="copyCoords">Copy</button>`;
+      bindCopy(); setAccuracyUI(currentAccuracy); updateHeadingUI();
+      enableLocBtn.style.display = 'none'; statusEl.textContent = '';
+      mapLink.href = `https://www.google.com/maps?q=${currentLat},${currentLng}`; mapLink.style.display = 'inline-block';
+      maybeFetchAddress(currentLat, currentLng);
+      saveLocationCache();
+    }
+    function updateLocation() {
+      if (!navigator.geolocation) { showLocationError('Geolocation not supported'); return; }
+      enableLocBtn.style.display = 'none';
+      if (!currentLat) locationEl.innerHTML = '<span class="spinner"></span>Getting location…';
+      statusEl.textContent = '';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          applyPosition(pos);
+          if (watchId == null) {
+            watchId = navigator.geolocation.watchPosition(applyPosition, () => {},
+              { enableHighAccuracy: true, maximumAge: 10000, timeout: 25000 });
+          }
+        },
+        (err) => {
+          if (err.code === 1) showLocationError('Location permission needed');
+          else if (err.code === 2) showLocationError('Turn on GPS / Location');
+          else if (err.code === 3) showLocationError('Location timeout');
+          else showLocationError('Location error');
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+      );
+    }
+    enableLocBtn.addEventListener('click', updateLocation);
+
+    function updateTime() {
+      timeEl.textContent = new Date().toLocaleString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    }
+
+    function flash() {
+      flashEl.style.opacity = '0.9';
+      requestAnimationFrame(() => setTimeout(() => { flashEl.style.opacity = '0'; }, 50));
+    }
+
+    captureBtn.addEventListener('click', () => {
+      if (!cameraReady || !video.videoWidth) { toast('Camera still loading…'); return; }
+      vibrate(40); flash();
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (usingFrontCamera) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(video, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      const now = new Date().toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const locLine = addressText || 'Location not available';
+      let coordLine = '';
+      if (currentLat != null) {
+        coordLine = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+        if (currentAccuracy != null) coordLine += `  ±${Math.round(currentAccuracy)}m`;
+        if (currentHeading != null && !isNaN(currentHeading)) coordLine += `  ${Math.round(currentHeading)}°`;
+      }
+
+      // Stamp burned into the SAVED photo — sized up so it's clearly legible after capture
+      const pad = Math.max(22, Math.round(canvas.width * 0.022));
+      const stampW = Math.min(canvas.width - pad * 2, Math.round(canvas.width * 0.9));
+      const lineH = Math.round(canvas.width * 0.036);
+      const titleSize = Math.round(canvas.width * 0.04);
+      const bodySize = Math.round(canvas.width * 0.03);
+      const labelSize = Math.round(bodySize * 0.85);
+      const stampH = coordLine ? Math.round(lineH * 4.7) : Math.round(lineH * 3.7);
+      const innerPad = Math.round(pad * 1.15);
+
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      roundRect(ctx, pad, pad, stampW, stampH, 14); ctx.fill();
+      ctx.fillStyle = '#3b82f6'; ctx.fillRect(pad, pad, 7, stampH);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.68)';
+      ctx.font = `700 ${labelSize}px -apple-system, BlinkMacSystemFont, Arial`;
+      ctx.fillText('LIZ GPSCAM' + (isOnline ? '' : ' · OFFLINE'), pad + innerPad, pad + lineH * 1.05);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${titleSize}px -apple-system, BlinkMacSystemFont, Arial`;
+      const maxChars = Math.floor((stampW - innerPad * 2) / (titleSize * 0.52));
+      const truncated = locLine.length > maxChars ? locLine.slice(0, maxChars - 1) + '…' : locLine;
+      ctx.fillText(truncated, pad + innerPad, pad + lineH * 2.25);
+
+      ctx.font = `600 ${bodySize}px -apple-system, BlinkMacSystemFont, Arial`;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      let y = pad + lineH * 3.4;
+      if (coordLine) { ctx.fillText(coordLine, pad + innerPad, y); y += lineH * 1.05; }
+      ctx.fillText(now, pad + innerPad, y);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      lastPhotoDataUrl = dataUrl; previewImg.src = dataUrl; preview.style.display = 'flex';
+      lastThumb.src = dataUrl; lastThumb.classList.add('show'); updateThumbLayout();
+      try { localStorage.setItem(PHOTO_KEY, dataUrl); } catch {}
+    });
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    lastThumb.addEventListener('click', () => {
+      if (lastPhotoDataUrl) { previewImg.src = lastPhotoDataUrl; preview.style.display = 'flex'; vibrate(15); }
+    });
+
+    async function shareOrSave(preferShare) {
+      const dataUrl = previewImg.src;
+      try {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], `LizGPSCam_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        if (preferShare && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Liz GPSCam' }); toast('Shared'); return;
+        }
+      } catch (_) {}
+      const link = document.createElement('a');
+      link.href = dataUrl; link.download = `LizGPSCam_${Date.now()}.jpg`; link.click();
+      toast('Saved to downloads'); vibrate(25);
+    }
+    shareBtn.addEventListener('click', () => shareOrSave(true));
+    saveBtn.addEventListener('click', () => shareOrSave(false));
+    retakeBtn.addEventListener('click', () => { preview.style.display = 'none'; vibrate(15); });
+
+    try {
+      const savedPhoto = localStorage.getItem(PHOTO_KEY);
+      if (savedPhoto) { lastPhotoDataUrl = savedPhoto; lastThumb.src = savedPhoto; lastThumb.classList.add('show'); }
+    } catch {}
+    applyCachedLocation();
+    startCamera(); updateLocation(); updateTime(); setInterval(updateTime, 1000); updateThumbLayout();
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => setInterval(() => reg.update(), 60 * 60 * 1000))
+          .catch((err) => console.warn('SW registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>

@@ -773,6 +773,25 @@
 
     let recCanvas, recCtx, recRAF, mediaRecorder, recordedChunks = [], recTimerInterval, recStartTime;
 
+    // --- perf: cached stamp overlay, redrawn once/sec instead of every frame ---
+    let stampCanvas = null, stampCtx = null, lastStampSecond = -1;
+    function ensureStampCanvas(width, height) {
+      if (!stampCanvas) {
+        stampCanvas = document.createElement('canvas');
+        stampCtx = stampCanvas.getContext('2d');
+      }
+      if (stampCanvas.width !== width) stampCanvas.width = width;
+      if (stampCanvas.height !== height) stampCanvas.height = height;
+    }
+    function refreshStampIfNeeded(width, height) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec === lastStampSecond && stampCanvas) return;
+      lastStampSecond = nowSec;
+      ensureStampCanvas(width, height);
+      stampCtx.clearRect(0, 0, width, height);
+      drawStamp(stampCtx, width);
+    }
+
     function pickMimeType() {
       const candidates = [
         'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8',
@@ -786,15 +805,15 @@
 
     function drawRecordingFrame() {
       if (!isRecording) return;
-      recCtx.filter = currentFilterCss();
+      // no per-frame ctx.filter — filters are expensive on canvas and were the main cause of dropped/laggy frames
       if (usingFrontCamera) {
         recCtx.save(); recCtx.translate(recCanvas.width, 0); recCtx.scale(-1, 1);
         recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height); recCtx.restore();
       } else {
         recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height);
       }
-      recCtx.filter = 'none';
-      drawStamp(recCtx, recCanvas.width);
+      refreshStampIfNeeded(recCanvas.width, recCanvas.height); // heavy text work, now only 1x/sec
+      recCtx.drawImage(stampCanvas, 0, 0); // cheap composite every frame
       recRAF = requestAnimationFrame(drawRecordingFrame);
     }
 
@@ -810,14 +829,19 @@
       const mime = pickMimeType();
       if (!mime) { toast('Video recording not supported on this browser'); return; }
 
+      // perf: cap recording resolution so encoding/drawing stays smooth on mobile
+      const MAX_REC_WIDTH = 1280;
+      const scale = Math.min(1, MAX_REC_WIDTH / video.videoWidth);
       recCanvas = document.createElement('canvas');
-      recCanvas.width = video.videoWidth; recCanvas.height = video.videoHeight;
+      recCanvas.width = Math.round(video.videoWidth * scale);
+      recCanvas.height = Math.round(video.videoHeight * scale);
       recCtx = recCanvas.getContext('2d');
       recordedChunks = [];
+      lastStampSecond = -1; // force stamp redraw on first frame of new recording
 
       const stream = recCanvas.captureStream(30);
       try {
-        mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
       } catch (err) {
         toast('Could not start recording'); return;
       }
@@ -852,8 +876,11 @@
       recTimerEl.classList.remove('show');
       captureBtn.classList.remove('recording');
       switchBtn.style.opacity = ''; switchBtn.style.pointerEvents = '';
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
       vibrate([30, 40, 30]);
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try { mediaRecorder.requestData(); } catch {} // flush any buffered frames before stopping
+        mediaRecorder.stop();
+      }
     }
 
     captureBtn.addEventListener('click', () => {

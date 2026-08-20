@@ -33,13 +33,13 @@
   "screenshots": [
     {
       "src": "screenshot-narrow.jpg",
-      "sizes": "WIDTHxHEIGHT",
+      "sizes": "922x2048",
       "type": "image/jpeg",
       "form_factor": "narrow"
     },
     {
       "src": "screenshot-wide.webp",
-      "sizes": "WIDTHxHEIGHT",
+      "sizes": "1439x762",
       "type": "image/webp",
       "form_factor": "wide"
     }

@@ -771,7 +771,7 @@
       try { localStorage.setItem(PHOTO_KEY, dataUrl); } catch {}
     }
 
-    let recCanvas, recCtx, recRAF, mediaRecorder, recordedChunks = [], recTimerInterval, recStartTime;
+    let recCanvas, recCtx, recRAF, mediaRecorder, recordedChunks = [], recTimerInterval, recStartTime, recVideoTrack;
 
     // --- perf: cached stamp overlay, redrawn once/sec instead of every frame ---
     let stampCanvas = null, stampCtx = null, lastStampSecond = -1;
@@ -814,6 +814,11 @@
       }
       refreshStampIfNeeded(recCanvas.width, recCanvas.height); // heavy text work, now only 1x/sec
       recCtx.drawImage(stampCanvas, 0, 0); // cheap composite every frame
+      // Manually push this frame into the recording stream so the encoded
+      // video's timing matches real elapsed time, instead of relying on the
+      // browser's fixed-fps auto-capture (which can fall behind under load
+      // and silently produce a shorter-than-real-time recording).
+      if (recVideoTrack) recVideoTrack.requestFrame();
       recRAF = requestAnimationFrame(drawRecordingFrame);
     }
 
@@ -839,7 +844,12 @@
       recordedChunks = [];
       lastStampSecond = -1; // force stamp redraw on first frame of new recording
 
-      const stream = recCanvas.captureStream(30);
+      // captureStream(0) = manual mode: no auto fps-based capture. We push
+      // exactly one frame per real draw via track.requestFrame() in
+      // drawRecordingFrame(), so recorded duration tracks real elapsed time
+      // even if the device can't sustain a fixed target framerate.
+      const stream = recCanvas.captureStream(0);
+      recVideoTrack = stream.getVideoTracks()[0];
       try {
         mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
       } catch (err) {
@@ -881,6 +891,7 @@
         try { mediaRecorder.requestData(); } catch {} // flush any buffered frames before stopping
         mediaRecorder.stop();
       }
+      recVideoTrack = null;
     }
 
     captureBtn.addEventListener('click', () => {

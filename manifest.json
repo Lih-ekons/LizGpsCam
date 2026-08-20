@@ -1,6 +1,6 @@
 {
-  "name": "Liz GPS Cam – GPS Camera",
-  "short_name": "Liz GPSCam",
+  "name": "GeoSnap by Liz – GPS Camera",
+  "short_name": "GeoSnap",
   "description": "Capture photos with GPS location, address and timestamp stamped on the image. Works offline.",
   "id": "/LizGpsCam/",
   "start_url": "./",
@@ -13,21 +13,23 @@
   "theme_color": "#000000",
   "categories": ["photo", "utilities"],
   "prefer_related_applications": false,
+  "related_applications": [],
+  "iarc_rating_id": "",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "./icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512.png",
+      "src": "./icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512-maskable.png",
+      "src": "./icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -35,13 +37,13 @@
   ],
   "screenshots": [
     {
-      "src": "screenshot-narrow.jpg",
+      "src": "./screenshot-narrow.jpg",
       "sizes": "922x2048",
       "type": "image/jpeg",
       "form_factor": "narrow"
     },
     {
-      "src": "screenshot-wide.webp",
+      "src": "./screenshot-wide.webp",
       "sizes": "1439x762",
       "type": "image/webp",
       "form_factor": "wide"

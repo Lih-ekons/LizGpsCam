@@ -240,7 +240,13 @@
       padding: 16px 14px calc(16px + var(--safe-bottom)); animation: fadeIn 0.22s ease;
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    #previewImg, #previewVideo { max-width: 100%; max-height: 62vh; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.35); object-fit: contain; display: none; background: #000; }
+    #previewImg { max-width: 100%; max-height: 62vh; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.35); object-fit: contain; display: none; background: #000; }
+    #videoStampWrap { display: none; position: relative; max-width: 100%; max-height: 62vh; margin: 0 auto; }
+    #videoStampWrap.show { display: block; }
+    #previewVideo { display: block; width: 100%; max-height: 62vh; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.35); object-fit: contain; background: #000; }
+    #videoStampOverlay { position: absolute; left: 10px; bottom: 10px; right: 10px; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.85); }
+    #videoStampOverlay .vs-title { color: #fff; font-size: 13.5px; font-weight: 700; line-height: 1.35; }
+    #videoStampOverlay .vs-sub { color: rgba(255,255,255,0.88); font-size: 11.5px; font-weight: 600; line-height: 1.3; }
     #hint { color: var(--hint-color); font-size: 13px; margin-top: 16px; text-align: center; line-height: 1.4; }
     #btnRow { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 100%; }
     .actionBtn {
@@ -327,7 +333,10 @@
 
   <div id="preview">
     <img id="previewImg" alt="Captured photo">
-    <video id="previewVideo" controls playsinline loop></video>
+    <div id="videoStampWrap">
+      <video id="previewVideo" controls playsinline loop></video>
+      <div id="videoStampOverlay"></div>
+    </div>
     <div id="hint">Long-press the photo to save<br>or use the buttons below</div>
     <div id="btnRow">
       <button class="actionBtn" id="retakeBtn">Retake</button>
@@ -765,36 +774,16 @@
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       lastPhotoDataUrl = dataUrl; lastCaptureType = 'photo';
-      previewImg.src = dataUrl; previewImg.style.display = 'block'; previewVideo.style.display = 'none';
-      preview.style.display = 'flex';
+      showPhotoPreview(dataUrl);
       lastThumb.src = dataUrl; lastThumb.classList.add('show'); updateThumbLayout();
       try { localStorage.setItem(PHOTO_KEY, dataUrl); } catch {}
     }
 
-    let recCanvas, recCtx, recRAF, mediaRecorder, recordedChunks = [], recTimerInterval, recStartTime, recVideoTrack;
-
-    // --- perf: cached stamp overlay, redrawn once/sec instead of every frame ---
-    let stampCanvas = null, stampCtx = null, lastStampSecond = -1;
-    function ensureStampCanvas(width, height) {
-      if (!stampCanvas) {
-        stampCanvas = document.createElement('canvas');
-        stampCtx = stampCanvas.getContext('2d');
-      }
-      if (stampCanvas.width !== width) stampCanvas.width = width;
-      if (stampCanvas.height !== height) stampCanvas.height = height;
-    }
-    function refreshStampIfNeeded(width, height) {
-      const nowSec = Math.floor(Date.now() / 1000);
-      if (nowSec === lastStampSecond && stampCanvas) return;
-      lastStampSecond = nowSec;
-      ensureStampCanvas(width, height);
-      stampCtx.clearRect(0, 0, width, height);
-      drawStamp(stampCtx, width);
-    }
+    let mediaRecorder, recordedChunks = [], recTimerInterval, recStartTime, recordingStampSnapshot = null;
 
     function pickMimeType() {
       const candidates = [
-        'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8',
+        'video/webm;codecs=vp9', 'video/webm;codecs=vp8',
         'video/webm', 'video/mp4;codecs=h264', 'video/mp4'
       ];
       for (const c of candidates) {
@@ -803,23 +792,38 @@
       return '';
     }
 
-    function drawRecordingFrame() {
-      if (!isRecording) return;
-      // no per-frame ctx.filter — filters are expensive on canvas and were the main cause of dropped/laggy frames
-      if (usingFrontCamera) {
-        recCtx.save(); recCtx.translate(recCanvas.width, 0); recCtx.scale(-1, 1);
-        recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height); recCtx.restore();
-      } else {
-        recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height);
+    function stampLinesFromSnapshot(snap) {
+      const lines = [snap.address || 'Location not available'];
+      if (snap.lat != null) {
+        let coordLine = `${snap.lat.toFixed(5)}, ${snap.lng.toFixed(5)}`;
+        if (snap.accuracy != null) coordLine += `  ±${Math.round(snap.accuracy)}m`;
+        if (snap.heading != null && !isNaN(snap.heading)) coordLine += `  ${Math.round(snap.heading)}°`;
+        lines.push(coordLine);
       }
-      refreshStampIfNeeded(recCanvas.width, recCanvas.height); // heavy text work, now only 1x/sec
-      recCtx.drawImage(stampCanvas, 0, 0); // cheap composite every frame
-      // Manually push this frame into the recording stream so the encoded
-      // video's timing matches real elapsed time, instead of relying on the
-      // browser's fixed-fps auto-capture (which can fall behind under load
-      // and silently produce a shorter-than-real-time recording).
-      if (recVideoTrack) recVideoTrack.requestFrame();
-      recRAF = requestAnimationFrame(drawRecordingFrame);
+      lines.push(snap.startedAt.toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+      }));
+      return lines;
+    }
+
+    function showPhotoPreview(dataUrl) {
+      previewVideo.pause();
+      document.getElementById('videoStampWrap').classList.remove('show');
+      previewImg.src = dataUrl; previewImg.style.display = 'block';
+      preview.style.display = 'flex';
+    }
+
+    function showVideoPreview(url) {
+      previewImg.style.display = 'none';
+      previewVideo.src = url;
+      const wrap = document.getElementById('videoStampWrap');
+      wrap.classList.add('show');
+      const overlay = document.getElementById('videoStampOverlay');
+      overlay.innerHTML = recordingStampSnapshot
+        ? stampLinesFromSnapshot(recordingStampSnapshot).map((l, i) => `<div class="${i === 0 ? 'vs-title' : 'vs-sub'}">${l}</div>`).join('')
+        : '';
+      preview.style.display = 'flex';
+      previewVideo.play().catch(() => {});
     }
 
     function updateRecTimer() {
@@ -830,28 +834,21 @@
     }
 
     function startRecording() {
-      if (!cameraReady || !video.videoWidth) { toast('Camera still loading…'); return; }
+      if (!cameraReady || !currentStream) { toast('Camera still loading…'); return; }
       const mime = pickMimeType();
       if (!mime) { toast('Video recording not supported on this browser'); return; }
 
-      // perf: cap recording resolution so encoding/drawing stays smooth on mobile
-      const MAX_REC_WIDTH = 1280;
-      const scale = Math.min(1, MAX_REC_WIDTH / video.videoWidth);
-      recCanvas = document.createElement('canvas');
-      recCanvas.width = Math.round(video.videoWidth * scale);
-      recCanvas.height = Math.round(video.videoHeight * scale);
-      recCtx = recCanvas.getContext('2d');
+      // Record directly from the camera's own MediaStream — no per-frame
+      // canvas redraw. That canvas-recomposite pipeline (drawing the video
+      // frame + stamp into a <canvas> every tick, then capturing THAT canvas)
+      // is what caused the lag and the short/truncated recordings: real-time
+      // 2D compositing at camera resolution is heavy on phones, and once the
+      // device can't keep up, the recorded output ends up shorter than the
+      // time actually spent recording. The native stream path is hardware
+      // accelerated and doesn't have that bottleneck.
       recordedChunks = [];
-      lastStampSecond = -1; // force stamp redraw on first frame of new recording
-
-      // captureStream(0) = manual mode: no auto fps-based capture. We push
-      // exactly one frame per real draw via track.requestFrame() in
-      // drawRecordingFrame(), so recorded duration tracks real elapsed time
-      // even if the device can't sustain a fixed target framerate.
-      const stream = recCanvas.captureStream(0);
-      recVideoTrack = stream.getVideoTracks()[0];
       try {
-        mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
+        mediaRecorder = new MediaRecorder(currentStream, { mimeType: mime, videoBitsPerSecond: 4_000_000 });
       } catch (err) {
         toast('Could not start recording'); return;
       }
@@ -860,9 +857,18 @@
         const blob = new Blob(recordedChunks, { type: mime.split(';')[0] });
         const url = URL.createObjectURL(blob);
         lastVideoUrl = url; lastCaptureType = 'video';
-        previewVideo.src = url; previewVideo.style.display = 'block'; previewImg.style.display = 'none';
-        preview.style.display = 'flex';
-        previewVideo.play().catch(() => {});
+        showVideoPreview(url);
+      };
+
+      // Trade-off: since frames are no longer redrawn in real time, the GPS/
+      // time stamp can't be burned into the video's pixels. It's snapshotted
+      // here and shown as an on-screen overlay during in-app playback
+      // instead (see showVideoPreview) — it won't appear if the file is
+      // shared or opened elsewhere. Photos still get it baked in, since a
+      // single-frame canvas draw isn't the bottleneck.
+      recordingStampSnapshot = {
+        address: addressText, lat: currentLat, lng: currentLng,
+        accuracy: currentAccuracy, heading: currentHeading, startedAt: new Date()
       };
 
       isRecording = true;
@@ -872,7 +878,6 @@
       captureBtn.classList.add('recording');
       switchBtn.style.opacity = '0.4'; switchBtn.style.pointerEvents = 'none';
 
-      drawRecordingFrame();
       mediaRecorder.start(250);
       vibrate(40);
       toast('Recording…', 1200);
@@ -881,7 +886,6 @@
     function stopRecording() {
       if (!isRecording) return;
       isRecording = false;
-      cancelAnimationFrame(recRAF);
       clearInterval(recTimerInterval);
       recTimerEl.classList.remove('show');
       captureBtn.classList.remove('recording');
@@ -891,7 +895,6 @@
         try { mediaRecorder.requestData(); } catch {} // flush any buffered frames before stopping
         mediaRecorder.stop();
       }
-      recVideoTrack = null;
     }
 
     captureBtn.addEventListener('click', () => {
@@ -904,11 +907,9 @@
 
     lastThumb.addEventListener('click', () => {
       if (lastCaptureType === 'video' && lastVideoUrl) {
-        previewVideo.src = lastVideoUrl; previewVideo.style.display = 'block'; previewImg.style.display = 'none';
-        preview.style.display = 'flex'; previewVideo.play().catch(() => {}); vibrate(15);
+        showVideoPreview(lastVideoUrl); vibrate(15);
       } else if (lastPhotoDataUrl) {
-        previewImg.src = lastPhotoDataUrl; previewImg.style.display = 'block'; previewVideo.style.display = 'none';
-        preview.style.display = 'flex'; vibrate(15);
+        showPhotoPreview(lastPhotoDataUrl); vibrate(15);
       }
     });
 

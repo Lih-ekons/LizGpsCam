@@ -2,11 +2,14 @@
   "name": "Liz GPS Cam – GPS Camera",
   "short_name": "Liz GPSCam",
   "description": "Capture photos with GPS location, address and timestamp stamped on the image. Works offline.",
+  "id": "/LizGpsCam/",
   "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#000000",
+  "categories": ["photo", "utilities"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icon-192.png",
@@ -25,6 +28,20 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-narrow.jpg",
+      "sizes": "WIDTHxHEIGHT",
+      "type": "image/jpeg",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "screenshot-wide.webp",
+      "sizes": "WIDTHxHEIGHT",
+      "type": "image/webp",
+      "form_factor": "wide"
     }
   ]
 }

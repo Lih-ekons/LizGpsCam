@@ -1,16 +1,31 @@
-const CACHE_NAME = 'geocam-v3';
+const CACHE_NAME = 'geosnap-v5';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './icon-512-maskable.png'
+  './icon-512-maskable.png',
+  './screenshot-narrow.jpg',
+  './screenshot-wide.webp'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => {
+      // cache.addAll() is all-or-nothing — if a single asset 404s
+      // (e.g. a broken icon path) the entire service worker fails to
+      // install and offline support silently breaks. Caching each
+      // asset individually means one bad link no longer takes down
+      // the whole cache.
+      return Promise.all(
+        ASSETS.map((asset) =>
+          cache.add(asset).catch((err) => {
+            console.warn('SW: failed to cache', asset, err);
+          })
+        )
+      );
+    }).then(() => self.skipWaiting())
   );
 });
 

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#000000">
-  <meta name="description" content="Capture photos with GPS location, address and timestamp. Works offline.">
+  <meta name="description" content="Capture photos and videos with GPS location, address and timestamp. Works offline.">
   <title>Liz GPSCam – GPS Camera</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23000'/><path fill='%233b82f6' d='M50 18c-12 0-22 10-22 22 0 16 22 42 22 42s22-26 22-42c0-12-10-22-22-22zm0 30a8 8 0 1 1 0-16 8 8 0 0 1 0 16z'/><rect x='28' y='58' width='44' height='28' rx='6' fill='%23fff'/><circle cx='50' cy='72' r='9' fill='%23000'/><circle cx='50' cy='72' r='5' fill='%233b82f6'/></svg>">
@@ -18,14 +18,46 @@
       --warning: #f59e0b;
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+      /* dark theme (default) */
+      --overlay-grad-top: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 55%, transparent 100%);
+      --overlay-grad-bottom: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+      --text-color: #fff;
+      --sub-text-color: rgba(255,255,255,0.82);
+      --chip-bg: rgba(255,255,255,0.14);
+      --chip-text: #fff;
+      --side-btn-bg: rgba(255,255,255,0.14);
+      --side-btn-color: rgba(255,255,255,0.95);
+      --preview-bg: #050505;
+      --hint-color: #777;
+      --toast-bg: rgba(28,28,30,0.94);
+      --toast-text: #fff;
+      --segmented-bg: rgba(255,255,255,0.14);
+      --segmented-text: rgba(255,255,255,0.7);
+    }
+    :root[data-theme="light"] {
+      --overlay-grad-top: linear-gradient(to bottom, rgba(255,255,255,0.93) 0%, rgba(255,255,255,0.6) 55%, transparent 100%);
+      --overlay-grad-bottom: linear-gradient(to top, rgba(255,255,255,0.92) 0%, transparent 100%);
+      --text-color: #111;
+      --sub-text-color: rgba(17,17,17,0.78);
+      --chip-bg: rgba(0,0,0,0.08);
+      --chip-text: #111;
+      --side-btn-bg: rgba(0,0,0,0.08);
+      --side-btn-color: rgba(0,0,0,0.78);
+      --preview-bg: #f2f2f2;
+      --hint-color: #666;
+      --toast-bg: rgba(255,255,255,0.96);
+      --toast-text: #111;
+      --segmented-bg: rgba(0,0,0,0.08);
+      --segmented-text: rgba(0,0,0,0.55);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
-      height: 100%; background: #000; color: #fff;
+      height: 100%; background: #000; color: var(--text-color);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       overflow: hidden; position: relative; user-select: none; -webkit-user-select: none;
     }
-    #camera { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #0a0a0a; }
+    #camera { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #0a0a0a; transition: filter 0.15s; }
     .vignette {
       position: absolute; inset: 0; pointer-events: none; z-index: 5;
       background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
@@ -36,17 +68,16 @@
     #grid::before { left: 33.333%; top: 0; bottom: 0; width: 1px; box-shadow: 33.333vw 0 0 rgba(255,255,255,0.28); }
     #grid::after { top: 33.333%; left: 0; right: 0; height: 1px; box-shadow: 0 33.333vh 0 rgba(255,255,255,0.28); }
 
-    /* Compact live overlay — stays out of the way while framing a shot */
     #overlay {
       position: absolute; top: 0; left: 0; right: 0;
       padding: calc(12px + var(--safe-top)) 16px 30px;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 55%, transparent 100%);
-      z-index: 20;
+      background: var(--overlay-grad-top);
+      z-index: 20; color: var(--text-color);
     }
-    .top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
+    .top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
     .app-badge {
       display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700;
-      letter-spacing: 0.3px; background: rgba(255,255,255,0.14);
+      letter-spacing: 0.3px; background: var(--chip-bg); color: var(--chip-text);
       padding: 6px 11px 6px 9px; border-radius: 20px;
       backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); white-space: nowrap;
     }
@@ -55,10 +86,11 @@
       border-radius: 6px; overflow: hidden;
     }
     .app-badge .logo svg { width: 100%; height: 100%; display: block; }
-    .pills { display: flex; gap: 6px; align-items: center; }
+    .pills { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .pill {
       font-size: 11.5px; font-weight: 600; padding: 5px 9px; border-radius: 18px;
-      background: rgba(255,255,255,0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); white-space: nowrap;
+      background: var(--chip-bg); color: var(--chip-text);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); white-space: nowrap;
       display: flex; align-items: center; gap: 5px;
     }
     .pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.9; flex-shrink: 0; }
@@ -68,21 +100,38 @@
     .pill.acc-ok   { color: #fde68a; background: rgba(245,158,11,0.2); }
     .pill.acc-poor { color: #fca5a5; background: rgba(239,68,68,0.2); }
     .pill.hidden { display: none; }
+    .icon-chip {
+      width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--chip-bg); color: var(--chip-text);
+      display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      flex-shrink: 0; transition: transform 0.1s, background 0.15s;
+    }
+    .icon-chip svg { width: 16px; height: 16px; }
+    .icon-chip:active { transform: scale(0.88); }
+    .icon-chip.active { background: rgba(59,130,246,0.5); color: #fff; }
 
     #location {
-      font-size: 16px; font-weight: 600; line-height: 1.32; margin-bottom: 4px;
-      text-shadow: 0 1px 5px rgba(0,0,0,0.55); display: -webkit-box; -webkit-line-clamp: 2;
+      font-size: 16px; font-weight: 600; line-height: 1.32; margin-bottom: 4px; color: var(--text-color);
+      text-shadow: 0 1px 5px rgba(0,0,0,0.35); display: -webkit-box; -webkit-line-clamp: 2;
       -webkit-box-orient: vertical; overflow: hidden;
     }
     #coords {
-      font-size: 13px; opacity: 0.82; font-variant-numeric: tabular-nums; letter-spacing: 0.15px;
+      font-size: 13px; opacity: 0.85; color: var(--sub-text-color); font-variant-numeric: tabular-nums; letter-spacing: 0.15px;
       margin-bottom: 5px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     }
     #coords .copy-btn {
       font-size: 11.5px; font-weight: 600; color: #93c5fd; background: rgba(59,130,246,0.22);
       border: none; border-radius: 8px; padding: 4px 9px; cursor: pointer;
     }
-    #meta { font-size: 13px; opacity: 0.88; font-variant-numeric: tabular-nums; display: flex; gap: 14px; flex-wrap: wrap; }
+    #meta { font-size: 13px; color: var(--sub-text-color); font-variant-numeric: tabular-nums; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+    #recTimer {
+      display: none; align-items: center; gap: 6px; color: #fca5a5; font-weight: 700;
+    }
+    #recTimer.show { display: flex; }
+    #recTimer::before {
+      content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ef4444;
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
     #status { font-size: 12.5px; color: #fca5a5; margin-top: 6px; min-height: 16px; }
     #enableLocBtn {
       display: none; margin-top: 10px; width: 100%; padding: 12px; background: var(--primary);
@@ -92,25 +141,57 @@
     #enableLocBtn:active { transform: scale(0.98); }
     .map-link { display: none; margin-top: 8px; font-size: 13px; color: #93c5fd; text-decoration: none; font-weight: 500; }
     .spinner {
-      display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff; border-radius: 50%; animation: spin 0.65s linear infinite;
+      display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(120,120,120,0.35);
+      border-top-color: var(--text-color); border-radius: 50%; animation: spin 0.65s linear infinite;
       vertical-align: -2px; margin-right: 5px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    #filterStrip {
+      display: none; position: absolute; left: 0; right: 0; bottom: 168px; z-index: 21;
+      padding: 10px 14px calc(4px + var(--safe-bottom) * 0); gap: 10px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    #filterStrip.show { display: flex; }
+    #filterStrip::-webkit-scrollbar { display: none; }
+    .filter-chip {
+      flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 5px;
+      background: none; border: none; color: var(--text-color); opacity: 0.75;
+    }
+    .filter-chip.active { opacity: 1; }
+    .filter-chip .swatch {
+      width: 46px; height: 46px; border-radius: 12px; overflow: hidden; border: 2px solid transparent;
+      background: #333;
+    }
+    .filter-chip.active .swatch { border-color: var(--primary); }
+    .filter-chip .swatch img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .filter-chip span { font-size: 10.5px; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+
     #controls {
       position: absolute; bottom: 0; left: 0; right: 0;
-      padding: 16px 20px calc(28px + var(--safe-bottom));
-      background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
-      z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 18px;
+      padding: 12px 20px calc(28px + var(--safe-bottom));
+      background: var(--overlay-grad-bottom);
+      z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 14px;
     }
+
+    #modeToggle {
+      display: flex; background: var(--segmented-bg); border-radius: 20px; padding: 3px;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    #modeToggle button {
+      border: none; background: none; padding: 6px 18px; border-radius: 17px; font-size: 12.5px;
+      font-weight: 700; color: var(--segmented-text); letter-spacing: 0.3px; transition: background 0.15s, color 0.15s;
+    }
+    #modeToggle button.active { background: rgba(255,255,255,0.95); color: #000; }
+    :root[data-theme="light"] #modeToggle button.active { background: #111; color: #fff; }
+
     .ctrl-row { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 380px; }
     .side-btn {
-      width: 50px; height: 50px; border-radius: 50%; border: none; background: rgba(255,255,255,0.14);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: rgba(255,255,255,0.95);
+      width: 50px; height: 50px; border-radius: 50%; border: none; background: var(--side-btn-bg);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: var(--side-btn-color);
       display: flex; align-items: center; justify-content: center; transition: transform 0.12s, background 0.15s; position: relative;
     }
-    .side-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.25); }
+    .side-btn:active { transform: scale(0.88); background: rgba(128,128,128,0.3); }
     .side-btn svg { width: 22px; height: 22px; }
     .side-btn.active { background: rgba(59,130,246,0.45); color: #fff; }
     .side-btn.torch-on { background: rgba(251,191,36,0.42); color: #fde68a; }
@@ -122,13 +203,18 @@
     }
     #captureBtn::after {
       content: ""; position: absolute; inset: 5px; background: #fff; border-radius: 50%;
-      transition: transform 0.1s, background 0.1s;
+      transition: transform 0.1s, background 0.1s, border-radius 0.15s;
     }
     #captureBtn:active { transform: scale(0.93); }
     #captureBtn:active::after { transform: scale(0.88); background: #ddd; }
     #captureBtn.not-ready { border-color: rgba(255,255,255,0.35); }
     #captureBtn.not-ready::after { background: rgba(255,255,255,0.4); }
     #captureBtn.locked { box-shadow: 0 0 0 4px rgba(34,197,94,0.28); }
+    #captureBtn.video-mode { border-color: rgba(239,68,68,0.9); }
+    #captureBtn.video-mode::after { background: #ef4444; }
+    #captureBtn.recording { border-color: rgba(239,68,68,1); animation: rec-ring 1.4s ease-in-out infinite; }
+    #captureBtn.recording::after { border-radius: 8px; inset: 24px; background: #ef4444; }
+    @keyframes rec-ring { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
 
     #lastThumb {
       width: 50px; height: 50px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.55);
@@ -140,8 +226,8 @@
     #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 40; transition: opacity 0.07s; }
     #toast {
       position: absolute; bottom: calc(146px + var(--safe-bottom)); left: 50%;
-      transform: translateX(-50%) translateY(20px); background: rgba(28,28,30,0.94);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: #fff; font-size: 14px; font-weight: 600;
+      transform: translateX(-50%) translateY(20px); background: var(--toast-bg);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: var(--toast-text); font-size: 14px; font-weight: 600;
       padding: 12px 20px; border-radius: 13px; z-index: 60; opacity: 0; pointer-events: none;
       transition: opacity 0.25s, transform 0.25s; white-space: nowrap; max-width: 90%; text-align: center;
       box-shadow: 0 6px 20px rgba(0,0,0,0.4);
@@ -149,13 +235,13 @@
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     #preview {
-      display: none; position: absolute; inset: 0; background: #050505; z-index: 50;
+      display: none; position: absolute; inset: 0; background: var(--preview-bg); z-index: 50;
       flex-direction: column; align-items: center; justify-content: center;
       padding: 16px 14px calc(16px + var(--safe-bottom)); animation: fadeIn 0.22s ease;
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    #previewImg { max-width: 100%; max-height: 62vh; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.55); object-fit: contain; }
-    #hint { color: #777; font-size: 13px; margin-top: 16px; text-align: center; line-height: 1.4; }
+    #previewImg, #previewVideo { max-width: 100%; max-height: 62vh; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.35); object-fit: contain; display: none; background: #000; }
+    #hint { color: var(--hint-color); font-size: 13px; margin-top: 16px; text-align: center; line-height: 1.4; }
     #btnRow { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 100%; }
     .actionBtn {
       padding: 13px 20px; font-size: 15px; border: none; border-radius: 14px; font-weight: 700;
@@ -189,6 +275,12 @@
         Liz GPSCam
       </div>
       <div class="pills">
+        <button id="themeBtn" class="icon-chip" aria-label="Toggle theme" title="Light / dark mode">
+          <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        </button>
+        <button id="filtersToggleBtn" class="icon-chip" aria-label="Filters" title="Filters">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
+        </button>
         <div id="netPill" class="pill offline">Offline</div>
         <div id="accPill" class="pill hidden"></div>
       </div>
@@ -199,13 +291,20 @@
     <div id="meta">
       <span id="time">--:--:--</span>
       <span id="heading"></span>
+      <span id="recTimer">00:00</span>
     </div>
     <div id="status"></div>
     <button id="enableLocBtn">Enable Location</button>
     <a id="mapLink" class="map-link" href="#" target="_blank" rel="noopener">Open in Maps ↗</a>
   </div>
 
+  <div id="filterStrip"></div>
+
   <div id="controls">
+    <div id="modeToggle">
+      <button id="photoModeBtn" class="active" data-mode="photo">PHOTO</button>
+      <button id="videoModeBtn" data-mode="video">VIDEO</button>
+    </div>
     <div class="ctrl-row">
       <button id="gridBtn" class="side-btn" aria-label="Grid" title="Rule of thirds">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
@@ -221,13 +320,14 @@
           <path d="M19.07 4.93l-1.41 1.41"/><circle cx="12" cy="12" r="5"/>
         </svg>
       </button>
-      <img id="lastThumb" alt="Last photo" title="View last photo">
+      <img id="lastThumb" alt="Last capture" title="View last capture">
       <div id="thumbSpacer" style="width:50px;height:50px;"></div>
     </div>
   </div>
 
   <div id="preview">
     <img id="previewImg" alt="Captured photo">
+    <video id="previewVideo" controls playsinline loop></video>
     <div id="hint">Long-press the photo to save<br>or use the buttons below</div>
     <div id="btnRow">
       <button class="actionBtn" id="retakeBtn">Retake</button>
@@ -242,6 +342,7 @@
     const coordsEl = document.getElementById('coords');
     const timeEl = document.getElementById('time');
     const headingEl = document.getElementById('heading');
+    const recTimerEl = document.getElementById('recTimer');
     const statusEl = document.getElementById('status');
     const enableLocBtn = document.getElementById('enableLocBtn');
     const netPill = document.getElementById('netPill');
@@ -258,9 +359,16 @@
     const toastEl = document.getElementById('toast');
     const preview = document.getElementById('preview');
     const previewImg = document.getElementById('previewImg');
+    const previewVideo = document.getElementById('previewVideo');
     const saveBtn = document.getElementById('saveBtn');
     const shareBtn = document.getElementById('shareBtn');
     const retakeBtn = document.getElementById('retakeBtn');
+    const themeBtn = document.getElementById('themeBtn');
+    const themeIcon = document.getElementById('themeIcon');
+    const filtersToggleBtn = document.getElementById('filtersToggleBtn');
+    const filterStrip = document.getElementById('filterStrip');
+    const photoModeBtn = document.getElementById('photoModeBtn');
+    const videoModeBtn = document.getElementById('videoModeBtn');
 
     let currentStream = null;
     let usingFrontCamera = false;
@@ -274,10 +382,64 @@
     let addressText = 'Location not available';
     let watchId = null;
     let lastPhotoDataUrl = null;
+    let lastVideoUrl = null;
+    let lastCaptureType = null;
     let isOnline = navigator.onLine;
     let cameraReady = false;
+    let captureMode = 'photo';
+    let isRecording = false;
 
-    // Throttle reverse-geocoding lookups so we don't hammer the API on every GPS tick
+    const FILTERS = [
+      { id: 'none',    label: 'Normal',  css: 'none' },
+      { id: 'bw',      label: 'B&W',     css: 'grayscale(1) contrast(1.05)' },
+      { id: 'noir',    label: 'Noir',    css: 'grayscale(1) contrast(1.35) brightness(0.9)' },
+      { id: 'sepia',   label: 'Sepia',   css: 'sepia(0.75) contrast(1.05) brightness(1.02)' },
+      { id: 'vintage', label: 'Vintage', css: 'sepia(0.35) contrast(0.92) brightness(1.05) saturate(1.15)' },
+      { id: 'cool',    label: 'Cool',    css: 'hue-rotate(-8deg) saturate(1.2) brightness(1.03) contrast(1.05)' },
+      { id: 'warm',    label: 'Warm',    css: 'hue-rotate(8deg) saturate(1.25) brightness(1.05) contrast(1.03)' },
+      { id: 'vivid',   label: 'Vivid',   css: 'saturate(1.6) contrast(1.15)' }
+    ];
+    let currentFilterId = 'none';
+    function currentFilterCss() {
+      return (FILTERS.find(f => f.id === currentFilterId) || FILTERS[0]).css;
+    }
+    function buildFilterStrip() {
+      filterStrip.innerHTML = '';
+      FILTERS.forEach(f => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-chip' + (f.id === currentFilterId ? ' active' : '');
+        btn.dataset.id = f.id;
+        btn.innerHTML = `<div class="swatch" style="filter:${f.css}"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Crect width='60' height='60' fill='%23888'/%3E%3Ccircle cx='30' cy='24' r='11' fill='%23555'/%3E%3Crect x='10' y='38' width='40' height='16' fill='%23666'/%3E%3C/svg%3E" alt=""></div><span>${f.label}</span>`;
+        btn.addEventListener('click', () => {
+          currentFilterId = f.id;
+          video.style.filter = currentFilterCss();
+          [...filterStrip.children].forEach(c => c.classList.toggle('active', c.dataset.id === f.id));
+          vibrate(12);
+        });
+        filterStrip.appendChild(btn);
+      });
+    }
+    filtersToggleBtn.addEventListener('click', () => {
+      const showing = filterStrip.classList.toggle('show');
+      filtersToggleBtn.classList.toggle('active', showing);
+      vibrate(12);
+    });
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) metaTheme.setAttribute('content', theme === 'light' ? '#f5f5f5' : '#000000');
+      themeIcon.innerHTML = theme === 'light'
+        ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'
+        : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>';
+      try { localStorage.setItem('gpscam_theme', theme); } catch {}
+    }
+    themeBtn.addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+      applyTheme(cur === 'light' ? 'dark' : 'light');
+      vibrate(12);
+    });
+
     let lastAddressFetchTime = 0;
     let lastAddressFetchCoords = null;
     let addressFetchInFlight = false;
@@ -360,6 +522,7 @@
           audio: false
         });
         video.srcObject = currentStream;
+        video.style.filter = currentFilterCss();
         if (usingFrontCamera) {
           video.style.transform = 'scaleX(-1)';
           video.style.webkitTransform = 'scaleX(-1)';
@@ -391,7 +554,10 @@
       thumbSpacer.style.display = (hasThumb || hasTorch) ? 'none' : 'block';
     }
 
-    switchBtn.addEventListener('click', () => { usingFrontCamera = !usingFrontCamera; vibrate(15); startCamera(); });
+    switchBtn.addEventListener('click', () => {
+      if (isRecording) { toast('Stop recording first'); return; }
+      usingFrontCamera = !usingFrontCamera; vibrate(15); startCamera();
+    });
     torchBtn.addEventListener('click', async () => {
       if (!trackWithTorch) return;
       torchOn = !torchOn;
@@ -404,6 +570,17 @@
       gridOn = !gridOn; gridEl.classList.toggle('show', gridOn);
       gridBtn.classList.toggle('active', gridOn); vibrate(15);
     });
+
+    function setMode(mode) {
+      if (isRecording) { toast('Stop recording first'); return; }
+      captureMode = mode;
+      photoModeBtn.classList.toggle('active', mode === 'photo');
+      videoModeBtn.classList.toggle('active', mode === 'video');
+      captureBtn.classList.toggle('video-mode', mode === 'video');
+      captureBtn.setAttribute('aria-label', mode === 'photo' ? 'Take photo' : 'Record video');
+    }
+    photoModeBtn.addEventListener('click', () => { setMode('photo'); vibrate(12); });
+    videoModeBtn.addEventListener('click', () => { setMode('video'); vibrate(12); });
 
     async function getAddress(lat, lng) {
       if (!navigator.onLine) return null;
@@ -521,16 +698,16 @@
       requestAnimationFrame(() => setTimeout(() => { flashEl.style.opacity = '0'; }, 50));
     }
 
-    captureBtn.addEventListener('click', () => {
-      if (!cameraReady || !video.videoWidth) { toast('Camera still loading…'); return; }
-      vibrate(40); flash();
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (usingFrontCamera) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
-      ctx.drawImage(video, 0, 0);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+    function drawStamp(ctx, width) {
       const now = new Date().toLocaleString(undefined, {
         year: 'numeric', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -542,13 +719,11 @@
         if (currentAccuracy != null) coordLine += `  ±${Math.round(currentAccuracy)}m`;
         if (currentHeading != null && !isNaN(currentHeading)) coordLine += `  ${Math.round(currentHeading)}°`;
       }
-
-      // Stamp burned into the SAVED photo — sized up so it's clearly legible after capture
-      const pad = Math.max(22, Math.round(canvas.width * 0.022));
-      const stampW = Math.min(canvas.width - pad * 2, Math.round(canvas.width * 0.9));
-      const lineH = Math.round(canvas.width * 0.036);
-      const titleSize = Math.round(canvas.width * 0.04);
-      const bodySize = Math.round(canvas.width * 0.03);
+      const pad = Math.max(22, Math.round(width * 0.022));
+      const stampW = Math.min(width - pad * 2, Math.round(width * 0.9));
+      const lineH = Math.round(width * 0.036);
+      const titleSize = Math.round(width * 0.04);
+      const bodySize = Math.round(width * 0.03);
       const labelSize = Math.round(bodySize * 0.85);
       const stampH = coordLine ? Math.round(lineH * 4.7) : Math.round(lineH * 3.7);
       const innerPad = Math.round(pad * 1.15);
@@ -572,38 +747,147 @@
       let y = pad + lineH * 3.4;
       if (coordLine) { ctx.fillText(coordLine, pad + innerPad, y); y += lineH * 1.05; }
       ctx.fillText(now, pad + innerPad, y);
-
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-      lastPhotoDataUrl = dataUrl; previewImg.src = dataUrl; preview.style.display = 'flex';
-      lastThumb.src = dataUrl; lastThumb.classList.add('show'); updateThumbLayout();
-      try { localStorage.setItem(PHOTO_KEY, dataUrl); } catch {}
-    });
-
-    function roundRect(ctx, x, y, w, h, r) {
-      ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.arcTo(x + w, y, x + w, y + h, r);
-      ctx.arcTo(x + w, y + h, x, y + h, r);
-      ctx.arcTo(x, y + h, x, y, r);
-      ctx.arcTo(x, y, x + w, y, r);
-      ctx.closePath();
     }
 
+    function capturePhoto() {
+      if (!cameraReady || !video.videoWidth) { toast('Camera still loading…'); return; }
+      vibrate(40); flash();
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.filter = currentFilterCss();
+      if (usingFrontCamera) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(video, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.filter = 'none';
+
+      drawStamp(ctx, canvas.width);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      lastPhotoDataUrl = dataUrl; lastCaptureType = 'photo';
+      previewImg.src = dataUrl; previewImg.style.display = 'block'; previewVideo.style.display = 'none';
+      preview.style.display = 'flex';
+      lastThumb.src = dataUrl; lastThumb.classList.add('show'); updateThumbLayout();
+      try { localStorage.setItem(PHOTO_KEY, dataUrl); } catch {}
+    }
+
+    let recCanvas, recCtx, recRAF, mediaRecorder, recordedChunks = [], recTimerInterval, recStartTime;
+
+    function pickMimeType() {
+      const candidates = [
+        'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8',
+        'video/webm', 'video/mp4;codecs=h264', 'video/mp4'
+      ];
+      for (const c of candidates) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+      }
+      return '';
+    }
+
+    function drawRecordingFrame() {
+      if (!isRecording) return;
+      recCtx.filter = currentFilterCss();
+      if (usingFrontCamera) {
+        recCtx.save(); recCtx.translate(recCanvas.width, 0); recCtx.scale(-1, 1);
+        recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height); recCtx.restore();
+      } else {
+        recCtx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height);
+      }
+      recCtx.filter = 'none';
+      drawStamp(recCtx, recCanvas.width);
+      recRAF = requestAnimationFrame(drawRecordingFrame);
+    }
+
+    function updateRecTimer() {
+      const secs = Math.floor((Date.now() - recStartTime) / 1000);
+      const m = String(Math.floor(secs / 60)).padStart(2, '0');
+      const s = String(secs % 60).padStart(2, '0');
+      recTimerEl.textContent = `${m}:${s}`;
+    }
+
+    function startRecording() {
+      if (!cameraReady || !video.videoWidth) { toast('Camera still loading…'); return; }
+      const mime = pickMimeType();
+      if (!mime) { toast('Video recording not supported on this browser'); return; }
+
+      recCanvas = document.createElement('canvas');
+      recCanvas.width = video.videoWidth; recCanvas.height = video.videoHeight;
+      recCtx = recCanvas.getContext('2d');
+      recordedChunks = [];
+
+      const stream = recCanvas.captureStream(30);
+      try {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+      } catch (err) {
+        toast('Could not start recording'); return;
+      }
+      mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mime.split(';')[0] });
+        const url = URL.createObjectURL(blob);
+        lastVideoUrl = url; lastCaptureType = 'video';
+        previewVideo.src = url; previewVideo.style.display = 'block'; previewImg.style.display = 'none';
+        preview.style.display = 'flex';
+        previewVideo.play().catch(() => {});
+      };
+
+      isRecording = true;
+      recStartTime = Date.now();
+      recTimerEl.classList.add('show'); recTimerEl.textContent = '00:00';
+      recTimerInterval = setInterval(updateRecTimer, 1000);
+      captureBtn.classList.add('recording');
+      switchBtn.style.opacity = '0.4'; switchBtn.style.pointerEvents = 'none';
+
+      drawRecordingFrame();
+      mediaRecorder.start(250);
+      vibrate(40);
+      toast('Recording…', 1200);
+    }
+
+    function stopRecording() {
+      if (!isRecording) return;
+      isRecording = false;
+      cancelAnimationFrame(recRAF);
+      clearInterval(recTimerInterval);
+      recTimerEl.classList.remove('show');
+      captureBtn.classList.remove('recording');
+      switchBtn.style.opacity = ''; switchBtn.style.pointerEvents = '';
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      vibrate([30, 40, 30]);
+    }
+
+    captureBtn.addEventListener('click', () => {
+      if (captureMode === 'photo') {
+        capturePhoto();
+      } else {
+        if (isRecording) stopRecording(); else startRecording();
+      }
+    });
+
     lastThumb.addEventListener('click', () => {
-      if (lastPhotoDataUrl) { previewImg.src = lastPhotoDataUrl; preview.style.display = 'flex'; vibrate(15); }
+      if (lastCaptureType === 'video' && lastVideoUrl) {
+        previewVideo.src = lastVideoUrl; previewVideo.style.display = 'block'; previewImg.style.display = 'none';
+        preview.style.display = 'flex'; previewVideo.play().catch(() => {}); vibrate(15);
+      } else if (lastPhotoDataUrl) {
+        previewImg.src = lastPhotoDataUrl; previewImg.style.display = 'block'; previewVideo.style.display = 'none';
+        preview.style.display = 'flex'; vibrate(15);
+      }
     });
 
     async function shareOrSave(preferShare) {
-      const dataUrl = previewImg.src;
+      const isVideo = lastCaptureType === 'video' && previewVideo.style.display !== 'none';
+      const src = isVideo ? previewVideo.src : previewImg.src;
+      const ext = isVideo ? 'webm' : 'jpg';
+      const type = isVideo ? 'video/webm' : 'image/jpeg';
       try {
-        const blob = await (await fetch(dataUrl)).blob();
-        const file = new File([blob], `LizGPSCam_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        const blob = await (await fetch(src)).blob();
+        const file = new File([blob], `LizGPSCam_${Date.now()}.${ext}`, { type });
         if (preferShare && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: 'Liz GPSCam' }); toast('Shared'); return;
         }
       } catch (_) {}
       const link = document.createElement('a');
-      link.href = dataUrl; link.download = `LizGPSCam_${Date.now()}.jpg`; link.click();
+      link.href = src; link.download = `LizGPSCam_${Date.now()}.${ext}`; link.click();
       toast('Saved to downloads'); vibrate(25);
     }
     shareBtn.addEventListener('click', () => shareOrSave(true));
@@ -612,8 +896,11 @@
 
     try {
       const savedPhoto = localStorage.getItem(PHOTO_KEY);
-      if (savedPhoto) { lastPhotoDataUrl = savedPhoto; lastThumb.src = savedPhoto; lastThumb.classList.add('show'); }
+      if (savedPhoto) { lastPhotoDataUrl = savedPhoto; lastCaptureType = 'photo'; lastThumb.src = savedPhoto; lastThumb.classList.add('show'); }
     } catch {}
+
+    applyTheme((() => { try { return localStorage.getItem('gpscam_theme') || 'dark'; } catch { return 'dark'; } })());
+    buildFilterStrip();
     applyCachedLocation();
     startCamera(); updateLocation(); updateTime(); setInterval(updateTime, 1000); updateThumbLayout();
 

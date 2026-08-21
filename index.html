@@ -893,14 +893,6 @@
       const mime = pickMimeType();
       if (!mime) { toast('Video recording not supported on this browser'); return; }
 
-      // Record directly from the camera's own MediaStream — no per-frame
-      // canvas redraw. That canvas-recomposite pipeline (drawing the video
-      // frame + stamp into a <canvas> every tick, then capturing THAT canvas)
-      // is what caused the lag and the short/truncated recordings: real-time
-      // 2D compositing at camera resolution is heavy on phones, and once the
-      // device can't keep up, the recorded output ends up shorter than the
-      // time actually spent recording. The native stream path is hardware
-      // accelerated and doesn't have that bottleneck.
       recordedChunks = [];
       try {
         mediaRecorder = new MediaRecorder(currentStream, { mimeType: mime, videoBitsPerSecond: 4_000_000 });
@@ -915,12 +907,6 @@
         showVideoPreview(url);
       };
 
-      // Trade-off: since frames are no longer redrawn in real time, the GPS/
-      // time stamp can't be burned into the video's pixels. It's snapshotted
-      // here and shown as an on-screen overlay during in-app playback
-      // instead (see showVideoPreview) — it won't appear if the file is
-      // shared or opened elsewhere. Photos still get it baked in, since a
-      // single-frame canvas draw isn't the bottleneck.
       recordingStampSnapshot = {
         address: addressText, lat: currentLat, lng: currentLng,
         accuracy: currentAccuracy, heading: currentHeading, startedAt: new Date()
@@ -947,7 +933,7 @@
       switchBtn.style.opacity = ''; switchBtn.style.pointerEvents = '';
       vibrate([30, 40, 30]);
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        try { mediaRecorder.requestData(); } catch {} // flush any buffered frames before stopping
+        try { mediaRecorder.requestData(); } catch {}
         mediaRecorder.stop();
       }
     }
@@ -1006,26 +992,19 @@
       });
     }
 
-    // ---- Shift schedule reminders ----
+    // ---- Shift schedule reminders (server-driven via Cloudflare Worker) ----
     const SCHEDULE_KEY = 'gpscam_schedule';
-    const SCHEDULES = {
-      '7-4': [
-        { time: '12:00', title: "It's lunch break", body: 'Snap a pic now.' },
-        { time: '12:55', title: 'Lunch ending soon', body: 'Lunch break is almost over — take a pic now.' },
-        { time: '16:00', title: 'Shift ending', body: 'Your shift is almost over — get ready to take a pic.' }
-      ],
-      '8-5': [
-        { time: '12:00', title: "It's lunch break", body: 'Snap a pic now.' },
-        { time: '12:55', title: 'Lunch ending soon', body: 'Lunch break is almost over — take a pic now.' },
-        { time: '17:00', title: 'Shift ending', body: 'Your shift is almost over — get ready to take a pic.' }
-      ],
-      '9-6': [
-        { time: '12:00', title: "It's lunch break", body: 'Snap a pic now.' },
-        { time: '12:55', title: 'Lunch ending soon', body: 'Lunch break is almost over — take a pic now.' },
-        { time: '18:00', title: 'Shift ending', body: 'Your shift is almost over — get ready to take a pic.' }
-      ]
-    };
-    let scheduleTimeoutId = null;
+
+    const PUSH_API_BASE = 'https://geosnap-push.liz-geosnap.workers.dev';
+
+    const VAPID_PUBLIC_KEY = 'BCDs_3REZnxqWkaQ6cSUcDvIaiYSVU0X5XV8vwIhOhzCx8fvaeYxrM0bsD2Rp2U2cnHp2B0BgCAMn06Ly4-50p0';
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+    }
 
     function getSavedSchedule() {
       try { return localStorage.getItem(SCHEDULE_KEY) || 'off'; } catch { return 'off'; }
@@ -1033,70 +1012,87 @@
     function saveSchedule(id) {
       try { localStorage.setItem(SCHEDULE_KEY, id); } catch {}
     }
-    function getNextEvent(scheduleId) {
-      const events = SCHEDULES[scheduleId];
-      if (!events) return null;
-      const now = new Date();
-      const upcoming = events.map(e => {
-        const [h, m] = e.time.split(':').map(Number);
-        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-        if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
-        return { ...e, date: d };
-      });
-      upcoming.sort((a, b) => a.date - b.date);
-      return upcoming[0];
-    }
-    function fireScheduleNotification(event) {
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-      if (navigator.serviceWorker) {
-        navigator.serviceWorker.ready.then(reg => {
-          reg.showNotification(event.title, {
-            body: event.body, icon: './icon-192.png', badge: './icon-192.png',
-            tag: 'geosnap-schedule', vibrate: [80, 40, 80]
-          });
-        });
-      } else {
-        new Notification(event.title, { body: event.body, icon: './icon-192.png' });
-      }
-    }
-    function scheduleNext() {
-      clearTimeout(scheduleTimeoutId);
-      const scheduleId = getSavedSchedule();
-      if (scheduleId === 'off') return;
-      const next = getNextEvent(scheduleId);
-      if (!next) return;
-      const delay = Math.max(1000, next.date.getTime() - Date.now());
-      scheduleTimeoutId = setTimeout(() => { fireScheduleNotification(next); scheduleNext(); }, delay);
-    }
     function updateScheduleUI() {
       const active = getSavedSchedule();
       scheduleOptionBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.schedule === active));
       scheduleBtn.classList.toggle('active', active !== 'off');
     }
+
+    async function getPushSubscription() {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+      }
+      return sub;
+    }
+
+    async function sendScheduleToServer(scheduleId) {
+      const sub = await getPushSubscription();
+      const tzOffsetMinutes = new Date().getTimezoneOffset();
+      await fetch(`${PUSH_API_BASE}/api/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub.toJSON(), scheduleId, tzOffsetMinutes })
+      });
+    }
+
+    async function removeScheduleFromServer() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch(`${PUSH_API_BASE}/api/unsubscribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: sub.endpoint })
+          });
+        }
+      } catch (err) {
+        console.warn('unsubscribe cleanup failed', err);
+      }
+    }
+
     async function selectSchedule(id) {
       if (id !== 'off') {
-        if (!('Notification' in window)) { toast('Notifications not supported on this browser'); return; }
+        if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+          toast('Push notifications not supported on this browser'); return;
+        }
         let perm = Notification.permission;
         if (perm === 'default') perm = await Notification.requestPermission();
         if (perm !== 'granted') { toast('Enable notifications in your browser settings first'); return; }
+
+        try {
+          await sendScheduleToServer(id);
+        } catch (err) {
+          toast('Could not reach reminder server'); console.error(err); return;
+        }
+      } else {
+        await removeScheduleFromServer();
       }
+
       saveSchedule(id);
       updateScheduleUI();
       scheduleModalBackdrop.classList.remove('show');
-      if (id === 'off') { clearTimeout(scheduleTimeoutId); toast('Schedule reminders off'); }
-      else { scheduleNext(); toast('Schedule set: ' + id); }
+      toast(id === 'off' ? 'Schedule reminders off' : 'Schedule set: ' + id);
       vibrate(15);
     }
+
     scheduleBtn.addEventListener('click', () => { scheduleModalBackdrop.classList.add('show'); vibrate(12); });
     closeScheduleModal.addEventListener('click', () => scheduleModalBackdrop.classList.remove('show'));
     scheduleModalBackdrop.addEventListener('click', (e) => { if (e.target === scheduleModalBackdrop) scheduleModalBackdrop.classList.remove('show'); });
     scheduleOptionBtns.forEach(btn => btn.addEventListener('click', () => selectSchedule(btn.dataset.schedule)));
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleNext(); });
+
+    navigator.serviceWorker?.addEventListener('message', (event) => {
+      if (event.data?.type === 'PUSH_RESUBSCRIBED' && getSavedSchedule() !== 'off') {
+        sendScheduleToServer(getSavedSchedule()).catch(() => {});
+      }
+    });
 
     updateScheduleUI();
-    if (getSavedSchedule() !== 'off' && 'Notification' in window && Notification.permission === 'granted') {
-      scheduleNext();
-    }
   </script>
 </body>
 </html>

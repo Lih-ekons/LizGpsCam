@@ -9,15 +9,9 @@ const ASSETS = [
   './screenshot-narrow.jpg',
   './screenshot-wide.webp'
 ];
-
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // cache.addAll() is all-or-nothing — if a single asset 404s
-      // (e.g. a broken icon path) the entire service worker fails to
-      // install and offline support silently breaks. Caching each
-      // asset individually means one bad link no longer takes down
-      // the whole cache.
       return Promise.all(
         ASSETS.map((asset) =>
           cache.add(asset).catch((err) => {
@@ -28,7 +22,6 @@ self.addEventListener('install', (event) => {
     }).then(() => self.skipWaiting())
   );
 });
-
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -36,12 +29,10 @@ self.addEventListener('activate', (event) => {
     ).then(() => self.clients.claim())
   );
 });
-
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
-
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -54,7 +45,6 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
@@ -66,5 +56,49 @@ self.addEventListener('fetch', (event) => {
         return response;
       });
     })
+  );
+});
+
+// ---- Web Push: fires even when the app is closed/backgrounded ----
+// This is what actually delivers the lunch/break/end-of-shift reminders
+// sent by the Cloudflare Worker cron job. The old setTimeout-based
+// reminders in index.html only worked while the app was open in memory.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const title = data.title || 'GeoSnap';
+  const body = data.body || '';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: './icon-192.png',
+      badge: './icon-192.png',
+      tag: 'geosnap-schedule',
+      vibrate: [80, 40, 80]
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' }).then((clientsArr) => {
+      const existing = clientsArr.find((c) => 'focus' in c);
+      if (existing) return existing.focus();
+      return self.clients.openWindow('./');
+    })
+  );
+});
+
+// If the browser rotates the push subscription under the hood, re-register
+// it with the Worker so reminders keep working.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    self.registration.pushManager.subscribe(event.oldSubscription ? event.oldSubscription.options : { userVisibleOnly: true })
+      .then((newSub) => {
+        return self.clients.matchAll({ type: 'window' }).then((clientsArr) => {
+          clientsArr.forEach((c) => c.postMessage({ type: 'PUSH_RESUBSCRIBED', subscription: newSub.toJSON() }));
+        });
+      })
   );
 });
